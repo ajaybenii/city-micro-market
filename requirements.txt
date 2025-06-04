@@ -1,0 +1,10 @@
+# requirements.txt
+streamlit
+python-docx
+pyperclip
+google-genai
+python-dotenv
+
+# Optional dependencies for map visualization (uncomment if needed)
+# folium==0.17.0
+# streamlit-folium==0.23.1
