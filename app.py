@@ -237,8 +237,7 @@ def main():
       - History of {micromarket} with respect to real estate and infrastructure development.
     **Key Areas in {micromarket}**
     - List the key areas in {micromarket}, each with their unique selling points (connectivity, amenities, property rates, lifestyle).
-    **Locality-wise Analysis**
-    - Bullet points (USP)
+   
     **Investment Potential**
     - Analyze the investment potential of {micromarket} and its localities
     - Price appreciation trends and future growth prospects
