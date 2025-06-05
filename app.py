@@ -238,13 +238,7 @@ def main():
     **Key Areas in {micromarket}**
     - List the key areas in {micromarket}, each with their unique selling points (connectivity, amenities, property rates, lifestyle).
     **Locality-wise Analysis**
-    - If specific localities are mentioned, provide detailed analysis for each locality including:
-      - Connectivity and transportation options
-      - Property price trends and types available
-      - Nearby amenities (schools, hospitals, malls, parks)
-      - Infrastructure development and future projects
-      - Residential vs commercial mix
-      - Target demographics and lifestyle
+    - Bullet points (USP)
     **Investment Potential**
     - Analyze the investment potential of {micromarket} and its localities
     - Price appreciation trends and future growth prospects
