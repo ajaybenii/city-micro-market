@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import os
 import streamlit as st
 import pyperclip
+import pandas as pd
 from google import genai
 from google.genai import types
 from docx import Document
@@ -23,6 +24,46 @@ gemini_client = genai.Client(
 
 gemini_tools = [types.Tool(google_search=types.GoogleSearch())]
 
+# --- Load CSV Data Function ---
+@st.cache_data
+def load_csv_data(csv_file):
+    """Load and cache CSV data"""
+    try:
+        df = pd.read_csv(csv_file)
+        # Clean column names (remove extra spaces)
+        df.columns = df.columns.str.strip()
+        # Ensure we have the expected columns
+        expected_columns = ['CItyName', 'micromarket', 'locality']
+        if not all(col in df.columns for col in expected_columns):
+            st.error(f"CSV file must contain columns: {expected_columns}")
+            return None
+        return df
+    except Exception as e:
+        st.error(f"Error loading CSV file: {str(e)}")
+        return None
+
+def get_cities_from_csv(df):
+    """Get unique cities from CSV"""
+    if df is not None:
+        return sorted(df['CItyName'].unique().tolist())
+    return []
+
+def get_micromarkets_from_csv(df, city):
+    """Get micromarkets for a specific city"""
+    if df is not None and city:
+        micromarkets = df[df['CItyName'] == city]['micromarket'].unique().tolist()
+        return sorted(micromarkets)
+    return []
+
+def get_localities_from_csv(df, city, micromarket):
+    """Get localities for a specific city and micromarket"""
+    if df is not None and city and micromarket:
+        localities = df[(df['CItyName'] == city) & (df['micromarket'] == micromarket)]['locality'].unique().tolist()
+        # Remove NaN values and empty strings
+        localities = [loc for loc in localities if pd.notna(loc) and str(loc).strip()]
+        return sorted(localities)
+    return []
+
 # --- City Description Function ---
 def create_city_description(prompt: str, city: str) -> str:
     try:
@@ -42,10 +83,17 @@ def create_city_description(prompt: str, city: str) -> str:
     except Exception as e:
         return f"Error generating city description: {str(e)}"
 
-# --- Micro Market Description Function ---
-def create_micromarket_description(prompt: str, city: str, micromarket: str) -> str:
+# --- Enhanced Micro Market Description Function with Localities ---
+def create_micromarket_description(prompt: str, city: str, micromarket: str, localities: list = None) -> str:
     try:
-        full_query = prompt.format(city=city, micromarket=micromarket)
+        # Format localities for the prompt
+        localities_text = ""
+        if localities and len(localities) > 0:
+            localities_list = [loc.strip() for loc in localities if loc.strip()]
+            if localities_list:
+                localities_text = f"\nLocalities to focus on: {', '.join(localities_list)}"
+        
+        full_query = prompt.format(city=city, micromarket=micromarket, localities=localities_text)
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash-001",
             contents=full_query,
@@ -118,6 +166,29 @@ def main():
     st.title("City and Micro Market Description Generator")
     st.write("Generate city and micro market descriptions individually and download them combined in a single DOCX file.")
 
+    # CSV File Upload Section
+    st.header("Upload CSV Data")
+    uploaded_file = st.file_uploader(
+        "Upload CSV file with City, Micromarket, and Locality data",
+        type=['csv'],
+        help="CSV should have columns: CItyName, micromarket, locality"
+    )
+    
+    csv_data = None
+    if uploaded_file is not None:
+        csv_data = load_csv_data(uploaded_file)
+        if csv_data is not None:
+            st.success(f"✅ CSV loaded successfully! Found {len(csv_data)} records")
+            
+            # Show a preview of the data
+            with st.expander("Preview CSV Data"):
+                st.dataframe(csv_data.head(10))
+                st.write(f"**Total Records:** {len(csv_data)}")
+                st.write(f"**Cities:** {len(csv_data['CItyName'].unique())}")
+                st.write(f"**Micromarkets:** {len(csv_data['micromarket'].unique())}")
+    else:
+        st.info("Please upload a CSV file to enable automatic locality selection")
+
     # City description prompt
     city_prompt = """
     Provide a comprehensive description for city {city}. 
@@ -154,17 +225,34 @@ def main():
     - Do not add notes, FAQs, or extra commentary.
     """
 
-    # Micro market description prompt
+    # Enhanced micro market description prompt with localities
     micromarket_prompt = """
     Provide a comprehensive description for micro market {micromarket} in city {city}. 
-    Use data from Google Search tools to ensure accuracy, including relevant pincode details or other trending information where applicable.
+    Use data from Google Search tools to ensure accuracy, including relevant pincode details or other trending information where applicable.{localities}
     The description should cover:
     **{micromarket} Micro Market Description**
-    - Provide a ~200-word description covering:
+    - Provide a description covering:
       - Unique selling points (connectivity, amenities, property rates, lifestyle).
-      - Location within the city (describe relative to major roads, metro stations, or landmarks; include a placeholder for map integration).
-    **Top 10 Real Estate Projects in {micromarket}**
-    - List the top 10 real estate projects in {micromarket}, each with their unique selling points (connectivity, amenities, property rates, lifestyle).
+      - Location within the city (describe relative to major roads, metro stations, or landmarks).
+      - History of {micromarket} with respect to real estate and infrastructure development.
+    **Key Areas in {micromarket}**
+    - List the key areas in {micromarket}, each with their unique selling points (connectivity, amenities, property rates, lifestyle).
+    **Locality-wise Analysis**
+    - If specific localities are mentioned, provide detailed analysis for each locality including:
+      - Connectivity and transportation options
+      - Property price trends and types available
+      - Nearby amenities (schools, hospitals, malls, parks)
+      - Infrastructure development and future projects
+      - Residential vs commercial mix
+      - Target demographics and lifestyle
+    **Investment Potential**
+    - Analyze the investment potential of {micromarket} and its localities
+    - Price appreciation trends and future growth prospects
+    - Rental yields and demand patterns
+    **Infrastructure Development**
+    - Current and upcoming infrastructure projects
+    - Government initiatives and policy impacts
+    - Transportation connectivity improvements
     Response Format
     - Use plain text with Markdown syntax for bold headings (e.g., **{micromarket} Micro Market Description**) and no HTML tags, special characters, or FAQs.
     - Structure the response with bold section headings using ** and regular text for other content (paragraphs, bullet points).
@@ -177,7 +265,14 @@ def main():
     # City Description Form
     st.header("Generate City Description")
     with st.form(key='city_form'):
-        city = st.text_input("City (e.g., Gurgaon)", key="city_input")
+        if csv_data is not None:
+            # Dropdown for city selection from CSV
+            available_cities = get_cities_from_csv(csv_data)
+            city = st.selectbox("Select City", [""] + available_cities, key="city_select")
+        else:
+            # Text input if no CSV is uploaded
+            city = st.text_input("City (e.g., Gurgaon)", key="city_input")
+        
         city_prompt_area = st.text_area("Edit City Description Prompt", city_prompt, height=300, key="city_prompt")
         city_submit = st.form_submit_button(label='Generate City Description')
 
@@ -198,24 +293,80 @@ def main():
             except Exception as e:
                 st.error(f"Failed to copy city description: {str(e)}")
 
-    # Micro Market Description Form
+    # Enhanced Micro Market Description Form with CSV-based Localities
     st.header("Generate Micro Market Description")
     with st.form(key='micromarket_form'):
-        micro_city = st.text_input("City (e.g., Gurgaon)", key="micro_city_input")
-        micromarket = st.text_input("Micro Market (e.g., Golf Course Road)", key="micromarket_input")
-        micromarket_prompt_area = st.text_area("Edit Micro Market Description Prompt", micromarket_prompt, height=200, key="micromarket_prompt")
+        if csv_data is not None:
+            # Dropdown for city selection from CSV
+            available_cities = get_cities_from_csv(csv_data)
+            micro_city = st.selectbox("Select City", [""] + available_cities, key="micro_city_select")
+            
+            # Dropdown for micromarket selection based on selected city
+            available_micromarkets = []
+            if micro_city:
+                available_micromarkets = get_micromarkets_from_csv(csv_data, micro_city)
+            
+            micromarket = st.selectbox(
+                "Select Micro Market", 
+                [""] + available_micromarkets, 
+                key="micromarket_select",
+                disabled=not micro_city
+            )
+            
+            # Auto-populate localities based on city and micromarket selection
+            localities = []
+            if micro_city and micromarket:
+                localities = get_localities_from_csv(csv_data, micro_city, micromarket)
+                
+            # Display auto-filled localities
+            if localities:
+                st.success(f"✅ Found {len(localities)} localities for {micromarket}, {micro_city}")
+                with st.expander("View Auto-filled Localities"):
+                    for i, locality in enumerate(localities, 1):
+                        st.write(f"{i}. {locality}")
+            elif micro_city and micromarket:
+                st.warning("No localities found for the selected combination")
+                
+        else:
+            # Manual input if no CSV is uploaded
+            micro_city = st.text_input("City (e.g., Gurgaon)", key="micro_city_input")
+            micromarket = st.text_input("Micro Market (e.g., Golf Course Road)", key="micromarket_input")
+            
+            # Manual locality input
+            st.write("Enter localities separated by commas (e.g., Sector 54, DLF Phase 3, Cyber Hub)")
+            locality_text = st.text_area(
+                "Localities (one per line or comma-separated):",
+                placeholder="Enter localities like:\nSector 54\nDLF Phase 3\nCyber Hub\n\nOr comma-separated: Sector 54, DLF Phase 3, Cyber Hub",
+                key="locality_text"
+            )
+            
+            localities = []
+            if locality_text:
+                # Handle both comma-separated and line-separated input
+                if ',' in locality_text:
+                    localities = [loc.strip() for loc in locality_text.split(',') if loc.strip()]
+                else:
+                    localities = [loc.strip() for loc in locality_text.split('\n') if loc.strip()]
+        
+        micromarket_prompt_area = st.text_area("Edit Micro Market Description Prompt", micromarket_prompt, height=300, key="micromarket_prompt")
         micromarket_submit = st.form_submit_button(label='Generate Micro Market Description')
 
     if micromarket_submit and micro_city and micromarket:
         with st.spinner("Generating micro market description..."):
-            micromarket_description = create_micromarket_description(micromarket_prompt_area, micro_city, micromarket)
+            micromarket_description = create_micromarket_description(micromarket_prompt_area, micro_city, micromarket, localities)
             st.session_state['micromarket_description'] = micromarket_description
             st.session_state['micromarket_name'] = micromarket
             st.session_state['micro_city_name'] = micro_city
+            st.session_state['localities'] = localities
 
     # Display micro market description if available
     if 'micromarket_description' in st.session_state:
         st.markdown("### Micro Market Description")
+        
+        # Show selected localities info
+        if 'localities' in st.session_state and st.session_state['localities']:
+            st.info(f"Generated for {len(st.session_state['localities'])} localities: {', '.join(st.session_state['localities'][:5])}{'...' if len(st.session_state['localities']) > 5 else ''}")
+        
         st.markdown(st.session_state['micromarket_description'])
         if st.button("Copy Micro Market Description"):
             try:
