@@ -295,39 +295,41 @@ def main():
 
     # Enhanced Micro Market Description Form with CSV-based Localities
     st.header("Generate Micro Market Description")
+    
+    if csv_data is not None:
+        # Outside the form for dynamic updates
+        available_cities = get_cities_from_csv(csv_data)
+        micro_city = st.selectbox("Select City", [""] + available_cities, key="micro_city_select")
+        
+        # Dropdown for micromarket selection based on selected city
+        available_micromarkets = []
+        if micro_city:
+            available_micromarkets = get_micromarkets_from_csv(csv_data, micro_city)
+        
+        micromarket = st.selectbox(
+            "Select Micro Market", 
+            [""] + available_micromarkets, 
+            key="micromarket_select",
+            disabled=not micro_city
+        )
+        
+        # Auto-populate localities based on city and micromarket selection
+        localities = []
+        if micro_city and micromarket:
+            localities = get_localities_from_csv(csv_data, micro_city, micromarket)
+            
+        # Display auto-filled localities
+        if localities:
+            st.success(f"✅ Found {len(localities)} localities for {micromarket}, {micro_city}")
+            with st.expander("View Auto-filled Localities"):
+                for i, locality in enumerate(localities, 1):
+                    st.write(f"{i}. {locality}")
+        elif micro_city and micromarket:
+            st.warning("No localities found for the selected combination")
+    
+    # Form only contains the prompt and submit button
     with st.form(key='micromarket_form'):
-        if csv_data is not None:
-            # Dropdown for city selection from CSV
-            available_cities = get_cities_from_csv(csv_data)
-            micro_city = st.selectbox("Select City", [""] + available_cities, key="micro_city_select")
-            
-            # Dropdown for micromarket selection based on selected city
-            available_micromarkets = []
-            if micro_city:
-                available_micromarkets = get_micromarkets_from_csv(csv_data, micro_city)
-            
-            micromarket = st.selectbox(
-                "Select Micro Market", 
-                [""] + available_micromarkets, 
-                key="micromarket_select",
-                disabled=not micro_city
-            )
-            
-            # Auto-populate localities based on city and micromarket selection
-            localities = []
-            if micro_city and micromarket:
-                localities = get_localities_from_csv(csv_data, micro_city, micromarket)
-                
-            # Display auto-filled localities
-            if localities:
-                st.success(f"✅ Found {len(localities)} localities for {micromarket}, {micro_city}")
-                with st.expander("View Auto-filled Localities"):
-                    for i, locality in enumerate(localities, 1):
-                        st.write(f"{i}. {locality}")
-            elif micro_city and micromarket:
-                st.warning("No localities found for the selected combination")
-                
-        else:
+        if csv_data is None:
             # Manual input if no CSV is uploaded
             micro_city = st.text_input("City (e.g., Gurgaon)", key="micro_city_input")
             micromarket = st.text_input("Micro Market (e.g., Golf Course Road)", key="micromarket_input")
