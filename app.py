@@ -235,6 +235,7 @@ def main():
       - Unique selling points (connectivity, amenities, property rates, lifestyle).
       - Location within the city (describe relative to major roads, metro stations, or landmarks).
       - History of {micromarket} with respect to real estate and infrastructure development.
+      - Include 20 major residential , commercial & retail projects with builder's name.
     **Key Areas in {micromarket}**
     - List the key areas in {micromarket}, each with their unique selling points (connectivity, amenities, property rates, lifestyle).
    
